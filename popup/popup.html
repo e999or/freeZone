@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="popup-container">
+        <div class="header">
+            <img src="../icons/icon48.png" alt="Ad Blocker" class="logo">
+            <h1>Ad Blocker Pro</h1>
+        </div>
+        
+        <div class="status-section">
+            <div class="status-toggle">
+                <label class="switch">
+                    <input type="checkbox" id="enabled" checked>
+                    <span class="slider"></span>
+                </label>
+                <span id="status-text">Включен</span>
+            </div>
+        </div>
+
+        <div class="stats-section">
+            <div class="stat-item">
+                <span class="stat-label">Заблокировано сегодня:</span>
+                <span class="stat-value" id="today-stats">0</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-label">Всего заблокировано:</span>
+                <span class="stat-value" id="total-stats">0</span>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3>Настройки</h3>
+            <div class="setting-item">
+                <label>Пауза после блокировки (мс)</label>
+                <input type="number" id="block-duration" value="5000" min="1000" max="30000">
+            </div>
+            <div class="setting-item">
+                <label>Интервал проверки (мс)</label>
+                <input type="number" id="check-interval" value="1000" min="500" max="5000">
+            </div>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="debug-mode">
+                    Режим отладки
+                </label>
+            </div>
+        </div>
+
+        <div class="actions">
+            <button id="refresh-rules">Обновить правила</button>
+            <button id="clear-stats">Сбросить статистику</button>
+        </div>
+
+        <div class="footer">
+            <span id="version">Версия 1.0.0</span>
+            <a href="#" id="open-settings">Настройки</a>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>

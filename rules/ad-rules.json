@@ -1,0 +1,70 @@
+{
+  "version": "1.0.0",
+  "sites": [
+    {
+      "domain": "rutube.ru",
+      "cleanSrc": true,
+      "adTypes": [
+        {
+          "name": "reklamniy-blok",
+          "selector": "[data-testid='advert']",
+          "action": "hide",
+          "videoSelector": "video[data-testid='advert-video']",
+          "mainVideoSelector": "video[data-testid='video']"
+        },
+        {
+          "name": "yandex-reklama",
+          "selector": "#raichu_yasdk_container",
+          "action": "remove",
+          "videoSelector": "video, audio, iframe"
+        },
+        {
+          "name": "videoreklama",
+          "selectors": [
+            "video[data-testid='advert-video']",
+            "[data-testid='advert'] video",
+            ".advertisement video"
+          ],
+          "action": "clean",
+          "mainVideoSelector": "video[data-testid='video']"
+        }
+      ]
+    },
+    {
+      "domain": "youtube.com",
+      "cleanSrc": false,
+      "adTypes": [
+        {
+          "name": "youtube-ads",
+          "selector": ".video-ads, .ytp-ad-player-overlay, .ytp-ad-image-overlay",
+          "action": "hide",
+          "videoSelector": ".video-ads video",
+          "mainVideoSelector": "video.video-stream"
+        },
+        {
+          "name": "youtube-banners",
+          "selector": ".ytp-ad-overlay-container, .ytp-ad-simple-ad-badge",
+          "action": "remove"
+        }
+      ]
+    },
+    {
+      "domain": "twitch.tv",
+      "cleanSrc": false,
+      "adTypes": [
+        {
+          "name": "twitch-ads",
+          "selector": ".advertisement-overlay, .video-player__overlay",
+          "action": "hide",
+          "videoSelector": ".video-player__ad video",
+          "mainVideoSelector": ".video-player video"
+        },
+        {
+          "name": "twitch-banners",
+          "selector": ".ad-banner, .ad-container",
+          "action": "remove"
+        }
+      ]
+    }
+  ]
+}

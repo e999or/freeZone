@@ -1,20 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Ad Blocker Pro",
+  "name": "FreeZone - Блокировщик рекламы",
   "version": "1.0.0",
-  "description": "Блокировка рекламы на видео-платформах",
+  "description": "Блокировка рекламы на Rutube и других сайтах",
   "permissions": [
-    "activeTab",
     "storage",
     "scripting",
-    "webNavigation",
-    "tabs"
+    "activeTab",
+    "webNavigation"
   ],
   "host_permissions": [
     "*://*.rutube.ru/*",
     "*://*.youtube.com/*",
-    "*://*.twitch.tv/*",
-    "<all_urls>"
+    "*://*.twitch.tv/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -43,8 +41,10 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "web_accessible_resources": [{
-    "resources": ["rules/*.json"],
-    "matches": ["<all_urls>"]
-  }]
+  "web_accessible_resources": [
+    {
+      "resources": ["rules/ad-rules.json"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

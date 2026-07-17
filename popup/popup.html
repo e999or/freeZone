@@ -2,64 +2,74 @@
 <html>
 <head>
     <meta charset="UTF-8">
+    <title>FreeZone - Блокировщик рекламы</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-    <div class="popup-container">
-        <div class="header">
-            <img src="../icons/icon48.png" alt="Ad Blocker" class="logo">
-            <h1>Ad Blocker Pro</h1>
-        </div>
-        
-        <div class="status-section">
-            <div class="status-toggle">
-                <label class="switch">
-                    <input type="checkbox" id="enabled" checked>
-                    <span class="slider"></span>
-                </label>
-                <span id="status-text">Включен</span>
-            </div>
-        </div>
+<div class="popup-container">
+    <!-- Шапка -->
+    <div class="header">
+        <div class="logo">FZ</div>
+        <div class="title">FreeZone</div>
+        <div class="version">v1.0.0</div>
+    </div>
 
-        <div class="stats-section">
-            <div class="stat-item">
-                <span class="stat-label">Заблокировано сегодня:</span>
-                <span class="stat-value" id="today-stats">0</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-label">Всего заблокировано:</span>
-                <span class="stat-value" id="total-stats">0</span>
-            </div>
+    <!-- Статус -->
+    <div class="status-card" id="statusCard">
+        <div class="status-icon" id="statusIcon">🛡️</div>
+        <div class="status-info">
+            <div class="status-text" id="statusText">Активен</div>
+            <div class="status-sub" id="statusSub">Защита включена</div>
         </div>
-
-        <div class="settings-section">
-            <h3>Настройки</h3>
-            <div class="setting-item">
-                <label>Пауза после блокировки (мс)</label>
-                <input type="number" id="block-duration" value="5000" min="1000" max="30000">
-            </div>
-            <div class="setting-item">
-                <label>Интервал проверки (мс)</label>
-                <input type="number" id="check-interval" value="1000" min="500" max="5000">
-            </div>
-            <div class="setting-item">
-                <label>
-                    <input type="checkbox" id="debug-mode">
-                    Режим отладки
-                </label>
-            </div>
-        </div>
-
-        <div class="actions">
-            <button id="refresh-rules">Обновить правила</button>
-            <button id="clear-stats">Сбросить статистику</button>
-        </div>
-
-        <div class="footer">
-            <span id="version">Версия 1.0.0</span>
-            <a href="#" id="open-settings">Настройки</a>
+        <div class="status-toggle">
+            <label class="switch">
+                <input type="checkbox" id="toggleProtection" checked>
+                <span class="slider"></span>
+            </label>
         </div>
     </div>
-    <script src="popup.js"></script>
+
+    <!-- Статистика -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-number" id="blockedToday">0</div>
+            <div class="stat-label">Сегодня</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="blockedTotal">0</div>
+            <div class="stat-label">Всего</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-number" id="blockRate">0</div>
+            <div class="stat-label">За минуту</div>
+        </div>
+    </div>
+
+    <!-- Логи -->
+    <div class="logs-section">
+        <div class="logs-header">
+            <span>📋 Логи работы</span>
+            <button class="btn-clear-logs" id="clearLogs">Очистить</button>
+        </div>
+        <div class="logs-container" id="logsContainer">
+            <div class="log-entry log-info">🟢 Расширение запущено</div>
+            <div class="log-entry log-info">🔄 Ожидание загрузки страницы...</div>
+        </div>
+    </div>
+
+    <!-- Кнопки -->
+    <div class="actions">
+        <button class="btn btn-primary" id="refreshBtn">🔄 Обновить</button>
+        <button class="btn btn-secondary" id="resetStatsBtn">📊 Сброс</button>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        <span>🛡️ Защита активна</span>
+        <span id="currentSite">🌐 rutube.ru</span>
+    </div>
+</div>
+
+<script src="popup.js"></script>
 </body>
 </html>

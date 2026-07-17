@@ -1,4 +1,4 @@
-// background.js
+// background.js - Оптимизированная версия
 class AdBlockerBackground {
     constructor() {
         this.rules = new Map();
@@ -8,30 +8,37 @@ class AdBlockerBackground {
             checkInterval: 1000,
             debug: false
         };
+        this.stats = {
+            today: 0,
+            total: 0,
+            lastDate: null,
+            lastBlock: null
+        };
         this.initialize();
     }
 
     async initialize() {
         await this.loadRules();
         await this.loadSettings();
+        await this.loadStats();
         this.setupListeners();
-        console.log('[AdBlocker] Background service worker initialized');
+        console.log('[FreeZone] Background service worker initialized');
     }
 
     async loadRules() {
         try {
             const response = await fetch(chrome.runtime.getURL('rules/ad-rules.json'));
             const rulesData = await response.json();
-            
+
             rulesData.sites.forEach(site => {
                 this.rules.set(site.domain, site);
             });
-            
+
             if (this.settings.debug) {
-                console.log('[AdBlocker] Rules loaded:', this.rules.size, 'sites');
+                console.log('[FreeZone] Rules loaded:', this.rules.size, 'sites');
             }
         } catch (error) {
-            console.error('[AdBlocker] Failed to load rules:', error);
+            console.error('[FreeZone] Failed to load rules:', error);
         }
     }
 
@@ -42,19 +49,48 @@ class AdBlockerBackground {
                 this.settings = { ...this.settings, ...data.settings };
             }
         } catch (error) {
-            console.error('[AdBlocker] Failed to load settings:', error);
+            console.error('[FreeZone] Failed to load settings:', error);
+        }
+    }
+
+    async loadStats() {
+        try {
+            const data = await chrome.storage.local.get('stats');
+            if (data.stats) {
+                this.stats = data.stats;
+            }
+            this.updateDailyStats();
+        } catch (error) {
+            console.error('[FreeZone] Failed to load stats:', error);
+        }
+    }
+
+    updateDailyStats() {
+        const today = new Date().toDateString();
+        if (this.stats.lastDate !== today) {
+            this.stats.today = 0;
+            this.stats.lastDate = today;
+            this.saveStats();
+        }
+    }
+
+    async saveStats() {
+        try {
+            await chrome.storage.local.set({ stats: this.stats });
+        } catch (error) {
+            console.error('[FreeZone] Failed to save stats:', error);
         }
     }
 
     setupListeners() {
         // Обработка навигации
         chrome.webNavigation.onCommitted.addListener((details) => {
-            if (details.frameId === 0) {
-                this.handleNavigation(details.url);
+            if (details.frameId === 0 && this.settings.enabled) {
+                this.injectContentScript(details.tabId, details.url);
             }
         });
 
-        // Обработка сообщений от content script
+        // Обработка сообщений
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             this.handleMessage(message, sender, sendResponse);
             return true;
@@ -68,51 +104,66 @@ class AdBlockerBackground {
         });
     }
 
-    handleNavigation(url) {
+    async injectContentScript(tabId, url) {
         try {
             const domain = new URL(url).hostname;
             const siteRules = this.getRulesForDomain(domain);
-            
-            if (siteRules && this.settings.enabled) {
-                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                    if (tabs[0]) {
-                        chrome.tabs.sendMessage(tabs[0].id, {
-                            type: 'NAVIGATION',
-                            rules: siteRules,
-                            settings: this.settings
-                        });
-                    }
-                });
+
+            if (siteRules) {
+                await chrome.scripting.executeScript({
+                    target: { tabId: tabId },
+                    files: ['content.js']
+                }).catch(() => {});
             }
         } catch (error) {
-            console.error('[AdBlocker] Navigation error:', error);
+            // Игнорируем ошибки инъекции
         }
     }
 
     handleMessage(message, sender, sendResponse) {
         switch (message.type) {
             case 'GET_RULES':
-                const domain = message.domain;
+                const domain = message.domain || '';
                 const rules = this.getRulesForDomain(domain);
-                sendResponse({ rules, settings: this.settings });
+                sendResponse({
+                    rules,
+                    settings: this.settings,
+                    stats: this.stats
+                });
                 break;
-                
+
             case 'UPDATE_SETTINGS':
                 this.settings = { ...this.settings, ...message.settings };
                 chrome.storage.sync.set({ settings: this.settings });
                 sendResponse({ success: true });
                 break;
-                
+
             case 'GET_SETTINGS':
                 sendResponse({ settings: this.settings });
                 break;
-                
+
             case 'AD_BLOCKED':
-                if (this.settings.debug) {
-                    console.log('[AdBlocker] Ad blocked on:', sender.tab?.url);
-                }
-                this.updateStats(sender.tab?.id);
+                this.updateStats(message.count || 1);
+                this.sendLog(`🚫 Заблокировано ${message.count || 1} рекламных элементов`, 'block');
                 sendResponse({ success: true });
+                break;
+
+            case 'LOG':
+                this.sendLog(message.message, message.logType || 'info');
+                sendResponse({ success: true });
+                break;
+
+            case 'GET_STATS':
+                sendResponse({ stats: this.stats });
+                break;
+
+            case 'RESET_STATS':
+                this.resetStats();
+                sendResponse({ success: true });
+                break;
+
+            case 'PING':
+                sendResponse({ success: true, timestamp: Date.now() });
                 break;
         }
     }
@@ -126,24 +177,44 @@ class AdBlockerBackground {
         return null;
     }
 
-    async updateStats(tabId) {
-        try {
-            const data = await chrome.storage.local.get('stats');
-            const stats = data.stats || { total: 0, today: 0, lastDate: new Date().toDateString() };
-            
-            stats.total += 1;
-            const today = new Date().toDateString();
-            if (stats.lastDate !== today) {
-                stats.today = 1;
-                stats.lastDate = today;
-            } else {
-                stats.today += 1;
-            }
-            
-            await chrome.storage.local.set({ stats });
-        } catch (error) {
-            console.error('[AdBlocker] Failed to update stats:', error);
-        }
+    async updateStats(count = 1) {
+        this.updateDailyStats();
+
+        this.stats.today += count;
+        this.stats.total += count;
+        this.stats.lastBlock = new Date().toISOString();
+
+        await this.saveStats();
+
+        // Отправляем обновление в popup
+        chrome.runtime.sendMessage({
+            type: 'STATS_UPDATED',
+            stats: this.stats
+        }).catch(() => {});
+    }
+
+    async resetStats() {
+        const today = new Date().toDateString();
+        this.stats = {
+            today: 0,
+            total: 0,
+            lastDate: today,
+            lastBlock: null
+        };
+        await this.saveStats();
+
+        chrome.runtime.sendMessage({
+            type: 'STATS_UPDATED',
+            stats: this.stats
+        }).catch(() => {});
+    }
+
+    sendLog(message, type = 'info') {
+        chrome.runtime.sendMessage({
+            type: 'LOG',
+            message: message,
+            logType: type
+        }).catch(() => {});
     }
 
     showWelcomePage() {

@@ -221,6 +221,30 @@
         addLog('🗑️ Логи очищены', 'warning');
     }
 
+    // В popup.js для получения статистики
+    function getStatsFromPage() {
+        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+            if (tabs[0]) {
+                chrome.scripting.executeScript({
+                    target: { tabId: tabs[0].id },
+                    function: () => {
+                        try {
+                            const data = localStorage.getItem('freezone_stats');
+                            return data ? JSON.parse(data) : null;
+                        } catch (e) {
+                            return null;
+                        }
+                    }
+                }, (results) => {
+                    if (results && results[0] && results[0].result) {
+                        const stats = results[0].result;
+                        elements.blockedToday.textContent = stats.today || 0;
+                        elements.blockedTotal.textContent = stats.total || 0;
+                    }
+                });
+            }
+        });
+    }
 
     // ========== ИНИЦИАЛИЗАЦИЯ ==========
     function init() {
@@ -255,31 +279,6 @@
         setTimeout(() => {
             addLog('✅ Готов к работе', 'success');
         }, 500);
-    }
-
-    // В popup.js для получения статистики
-    function getStatsFromPage() {
-        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-            if (tabs[0]) {
-                chrome.scripting.executeScript({
-                    target: { tabId: tabs[0].id },
-                    function: () => {
-                        try {
-                            const data = localStorage.getItem('freezone_stats');
-                            return data ? JSON.parse(data) : null;
-                        } catch (e) {
-                            return null;
-                        }
-                    }
-                }, (results) => {
-                    if (results && results[0] && results[0].result) {
-                        const stats = results[0].result;
-                        elements.blockedToday.textContent = stats.today || 0;
-                        elements.blockedTotal.textContent = stats.total || 0;
-                    }
-                });
-            }
-        });
     }
 
     init();

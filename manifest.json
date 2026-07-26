@@ -10,20 +10,14 @@
     "webNavigation"
   ],
   "host_permissions": [
-    "*://*.rutube.ru/*",
-    "*://*.youtube.com/*",
-    "*://*.twitch.tv/*"
+    "*://*.rutube.ru/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": [
-        "*://*.rutube.ru/*",
-        "*://*.youtube.com/*",
-        "*://*.twitch.tv/*"
-      ],
+      "matches": ["*://*.rutube.ru/*"],
       "js": ["content.js"],
       "run_at": "document_start"
     }

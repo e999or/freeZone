@@ -1,379 +1,444 @@
-// content.js - Исправленная версия с защитой от двойного запуска
+// content.js - С защитой от "Extension context invalidated"
 (function() {
     'use strict';
 
-    // ========== ЗАЩИТА ОТ ДВОЙНОЙ ИНИЦИАЛИЗАЦИИ ==========
-    if (window.__freezone_initialized) {
-        console.log('[FreeZone] ⚠️ Уже инициализирован, пропускаем');
-        return;
-    }
-    window.__freezone_initialized = true;
+    if (!window.location.hostname.includes('rutube.ru')) return;
 
-    console.log('[FreeZone] 🚀 Запуск на:', window.location.hostname);
+    console.log('[FreeZone] 🚀 Запуск на Rutube');
 
     // ========== КОНФИГУРАЦИЯ ==========
     const CONFIG = {
         BLOCK_DURATION: 5000,
-        CHECK_INTERVAL: 2000,
-        DEBOUNCE_DELAY: 300,
-        MIN_BLOCK_INTERVAL: 3000
+        CHECK_INTERVAL: 300,
+        DEBOUNCE_DELAY: 50,
+        MAX_RECOVERY_ATTEMPTS: 5,
     };
 
     // ========== СОСТОЯНИЕ ==========
-    let state = {
-        isProcessing: false,
-        isBlocked: false,
-        blockTimer: null,
-        observer: null,
-        intervalId: null,
-        timeoutId: null,
-        lastBlockTime: 0,
-        blockCount: 0,
-        processedContainers: new WeakSet(),
-        isDestroyed: false,
-        isInitialized: false
-    };
+    let isProcessing = false;
+    let isBlocked = false;
+    let blockTimer = null;
+    let observer = null;
+    let intervalId = null;
+    let debounceTimer = null;
+    let blockCount = 0;
+    let isExtensionAlive = true;
 
-    const isRutube = window.location.hostname.includes('rutube.ru');
-
-    // ========== ЖЕСТКАЯ ОСТАНОВКА МЕДИА ==========
-    function killMedia(element, removeFromDOM = true) {
-        if (!element) return false;
-
+    // ========== ПРОВЕРКА ЖИВОСТИ РАСШИРЕНИЯ ==========
+    function isExtensionValid() {
         try {
-            if (element.pause) element.pause();
-            element.currentTime = 0;
-            element.muted = true;
-            element.volume = 0;
-
-            try {
-                element.src = '';
-                element.removeAttribute('src');
-                element.load();
-            } catch(e) {}
-
-            element.style.display = 'none';
-            element.style.visibility = 'hidden';
-            element.style.opacity = '0';
-            element.style.pointerEvents = 'none';
-
-            if (removeFromDOM) {
-                try { element.remove(); } catch(e) {}
-            }
-
-            return true;
+            // Проверяем, жив ли контекст расширения
+            return chrome && chrome.runtime && chrome.runtime.id &&
+                   !chrome.runtime?.onRestartRequired &&
+                   chrome.runtime?.sendMessage !== undefined;
         } catch(e) {
             return false;
         }
     }
 
-    // ========== БЛОКИРОВКА WEB AUDIO API ==========
-    function hijackAudioContexts() {
-        try {
-            if (window.AudioContext && !window._freezone_audio_hijacked) {
-                window._freezone_audio_hijacked = true;
-                const OriginalAudioContext = window.AudioContext;
+    // ========== БЕЗОПАСНАЯ ОТПРАВКА СООБЩЕНИЙ ==========
+    function safeSendMessage(message) {
+        if (!isExtensionValid()) {
+            console.log('[FreeZone] ⚠️ Расширение перезагружено, пропускаем отправку');
+            return Promise.resolve({ error: 'context_invalidated' });
+        }
 
-                window.AudioContext = function() {
-                    const ctx = new OriginalAudioContext();
-                    setTimeout(() => {
-                        try {
-                            if (ctx.state === 'running') {
-                                ctx.suspend();
-                                ctx.close();
-                            }
-                        } catch(e) {}
-                    }, 0);
-                    return ctx;
-                };
-                window.AudioContext.prototype = OriginalAudioContext.prototype;
-            }
-
-            if (AudioContext.prototype.createMediaElementSource) {
-                const origCreate = AudioContext.prototype.createMediaElementSource;
-                AudioContext.prototype.createMediaElementSource = function(element) {
-                    if (element && element.closest && (
-                        element.closest('[data-testid="advert"]') ||
-                        element.closest('#raichu_yasdk_container') ||
-                        (element.dataset && element.dataset.testid === 'advert-video')
-                    )) {
-                        return {
-                            connect: () => {},
-                            disconnect: () => {},
-                            gain: { value: 0 }
-                        };
+        return new Promise((resolve) => {
+            try {
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        // Игнорируем ошибку, если контекст уже недействителен
+                        if (chrome.runtime.lastError.message?.includes('Extension context invalidated')) {
+                            isExtensionAlive = false;
+                            console.log('[FreeZone] ⚠️ Контекст расширения стал недействительным');
+                        }
+                        resolve({ error: chrome.runtime.lastError.message });
+                    } else {
+                        resolve(response || { success: true });
                     }
-                    return origCreate.call(this, element);
-                };
+                });
+            } catch(e) {
+                if (e.message?.includes('Extension context invalidated')) {
+                    isExtensionAlive = false;
+                }
+                resolve({ error: e.message });
             }
-        } catch(e) {}
+        });
     }
 
-    // ========== ОСНОВНАЯ ЛОГИКА ==========
-    function handleAds() {
-        if (state.isProcessing || state.isBlocked || state.isDestroyed) return false;
+    // ========== СОХРАНЕНИЕ ГРОМКОСТИ ==========
+    let savedVolume = 1;
+    let savedMuted = false;
 
-        const now = Date.now();
-        if (now - state.lastBlockTime < CONFIG.MIN_BLOCK_INTERVAL) return false;
+    function saveVolumeState() {
+        const mainVideo = findMainVideo();
+        if (mainVideo) {
+            savedVolume = mainVideo.volume || 1;
+            savedMuted = mainVideo.muted || false;
+            console.log(`[FreeZone] 💾 Сохранена громкость: ${Math.round(savedVolume * 100)}%, muted: ${savedMuted}`);
+        }
+    }
 
-        state.isProcessing = true;
-        let handled = false;
+    function restoreVolumeState() {
+        const mainVideo = findMainVideo();
+        if (mainVideo) {
+            mainVideo.volume = savedVolume;
+            mainVideo.muted = savedMuted;
+            if (!savedMuted) {
+                mainVideo.muted = false;
+                setTimeout(() => {
+                    if (mainVideo.volume === 0) {
+                        mainVideo.volume = savedVolume || 0.5;
+                    }
+                    console.log(`[FreeZone] 🔊 Восстановлена громкость: ${Math.round(mainVideo.volume * 100)}%`);
+                }, 50);
+            } else {
+                console.log('[FreeZone] 🔇 Видео было muted, оставляем');
+            }
+        }
+    }
+
+    // ========== НАХОДИМ ОСНОВНОЕ ВИДЕО ==========
+    function findMainVideo() {
+        return document.querySelector('video[data-testid="video"]') ||
+               document.querySelector('.video-wrapper video') ||
+               document.querySelector('video[playsinline]');
+    }
+
+    // ========== ПОЛНАЯ БЛОКИРОВКА РЕКЛАМЫ ==========
+    function killAdCompletely() {
+        if (isProcessing || isBlocked) return false;
+
+        let found = false;
 
         try {
-            if (isRutube) {
-                // Проверяем наличие рекламы
-                const adElement = document.querySelector('[data-testid="advert"]');
-                const adVideo = document.querySelector('video[data-testid="advert-video"]');
-                const yandexAd = document.getElementById('raichu_yasdk_container');
+            // Проверяем, есть ли активная реклама
+            const adContainer = document.querySelector('[data-testid="advert"]');
+            const adVideo = document.querySelector('video[data-testid="advert-video"]');
+            const yandexAd = document.getElementById('raichu_yasdk_container');
 
-                // Проверяем, видна ли реклама (не скрыта)
-                let isAdVisible = false;
+            // Проверяем, видна ли реклама
+            let isAdVisible = false;
 
-                if (adElement) {
-                    const style = window.getComputedStyle(adElement);
-                    if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-                        isAdVisible = true;
-                    }
-                }
-
-                // Если нет видимой рекламы - выходим
-                if (!isAdVisible && !adVideo && !yandexAd) {
-                    state.isProcessing = false;
-                    return false;
-                }
-
-                // Проверяем, не обрабатывали ли мы уже этот контейнер
-                if (adElement && state.processedContainers.has(adElement)) {
-                    state.isProcessing = false;
-                    return false;
-                }
-
-                console.log('[FreeZone] 🎯 Обнаружена реклама, блокируем...');
-
-                // 1. Блокируем рекламное видео
-                if (adVideo) {
-                    killMedia(adVideo, true);
-                    handled = true;
-                }
-
-                // 2. Блокируем Яндекс рекламу
-                if (yandexAd) {
-                    yandexAd.querySelectorAll('video, audio, iframe').forEach(el => {
-                        killMedia(el, true);
-                    });
-                    yandexAd.style.display = 'none';
-                    yandexAd.style.visibility = 'hidden';
-                    handled = true;
-                }
-
-                // 3. Блокируем основной контейнер
-                if (adElement) {
-                    state.processedContainers.add(adElement);
-
-                    adElement.style.display = 'none';
-                    adElement.style.visibility = 'hidden';
-                    adElement.style.pointerEvents = 'none';
-                    adElement.style.opacity = '0';
-
-                    adElement.querySelectorAll('video, audio, iframe').forEach(el => {
-                        killMedia(el, true);
-                    });
-                    handled = true;
-                }
-
-                // 4. Блокируем аудио-контексты
-                hijackAudioContexts();
-
-                // 5. Запускаем основное видео
-                if (handled) {
-                    const mainVideo = document.querySelector('video[data-testid="video"]');
-                    if (mainVideo) {
-                        mainVideo.muted = false;
-                        mainVideo.volume = 1;
-                        // Если видео на паузе или только что началось - запускаем
-                        if (mainVideo.paused || mainVideo.currentTime === 0) {
-                            mainVideo.play().catch(() => {});
-                        }
-                    }
-
-                    state.blockCount++;
-                    state.lastBlockTime = now;
-                    console.log(`[FreeZone] ✅ Реклама заблокирована (${state.blockCount})`);
-                }
-
-            } else {
-                // Другие сайты
-                function findAdContainer(root = document) {
-                    const selectors = [
-                        '.ads-container',
-                        '.video-ads',
-                        '.ytp-ad-player-overlay',
-                        '.advertisement-overlay',
-                        '#ad-container'
-                    ];
-
-                    for (const selector of selectors) {
-                        const el = root.querySelector(selector);
-                        if (el) return { container: el, shadow: root };
-                    }
-
-                    for (let el of root.querySelectorAll('*')) {
-                        if (el.shadowRoot) {
-                            let found = findAdContainer(el.shadowRoot);
-                            if (found) return found;
-                        }
-                    }
-                    return null;
-                }
-
-                const result = findAdContainer();
-                if (result) {
-                    const container = result.container;
-                    console.log('[FreeZone] 🎯 Найден рекламный контейнер, удаляем...');
-
-                    container.querySelectorAll('video, audio, iframe').forEach(el => {
-                        killMedia(el, true);
-                    });
-
-                    container.remove();
-                    handled = true;
-
-                    if (result.shadow) {
-                        const videoWrapper = result.shadow.querySelector('.video-wrapper');
-                        if (videoWrapper) {
-                            videoWrapper.classList.remove('hidden');
-                            videoWrapper.style.display = '';
-                        }
-                        result.shadow.querySelectorAll('.rb-adman-ad-actions, .rb-adman-cta-block-wrapper, .rb-adman-cta-block')
-                            .forEach(el => el.remove());
-                    }
-
-                    console.log('[FreeZone] ✅ Рекламный контейнер удален');
+            if (adContainer) {
+                const style = window.getComputedStyle(adContainer);
+                if (style.display !== 'none' && style.visibility !== 'hidden') {
+                    isAdVisible = true;
                 }
             }
 
-            if (handled) {
-                state.isBlocked = true;
-                console.log(`[FreeZone] ⏸️ Мониторинг приостановлен на ${CONFIG.BLOCK_DURATION/1000} сек`);
+            if (adVideo && adVideo.src && !adVideo.ended) {
+                isAdVisible = true;
+            }
 
+            if (yandexAd) {
+                const style = window.getComputedStyle(yandexAd);
+                if (style.display !== 'none' && style.visibility !== 'hidden') {
+                    isAdVisible = true;
+                }
+            }
+
+            // Если реклама не видна - выходим
+            if (!isAdVisible) {
+                return false;
+            }
+
+            console.log('[FreeZone] 🎯 Обнаружена реклама, блокируем...');
+
+            // СОХРАНЯЕМ ГРОМКОСТЬ ПЕРЕД БЛОКИРОВКОЙ
+            saveVolumeState();
+
+            // 1. Рекламный контейнер
+            if (adContainer) {
+                adContainer.style.cssText = `
+                    display: none !important;
+                    visibility: hidden !important;
+                    opacity: 0 !important;
+                    pointer-events: none !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    overflow: hidden !important;
+                    position: absolute !important;
+                    z-index: -9999 !important;
+                `;
+                found = true;
+            }
+
+            // 2. Рекламное видео
+            if (adVideo) {
+                try {
+                    adVideo.pause();
+                    adVideo.muted = true;
+                    adVideo.volume = 0;
+                    adVideo.currentTime = 0;
+                    adVideo.src = '';
+                    adVideo.load();
+                } catch(e) {}
+                adVideo.style.cssText = `
+                    display: none !important;
+                    visibility: hidden !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                `;
+                found = true;
+            }
+
+            // 3. Яндекс реклама
+            if (yandexAd) {
+                yandexAd.querySelectorAll('video, audio, iframe').forEach(el => {
+                    try {
+                        if (el.tagName === 'VIDEO' || el.tagName === 'AUDIO') {
+                            el.pause();
+                            el.muted = true;
+                            el.volume = 0;
+                            el.currentTime = 0;
+                            el.src = '';
+                            el.load();
+                        }
+                        el.style.display = 'none';
+                        el.remove();
+                    } catch(e) {}
+                });
+
+                yandexAd.innerHTML = '';
+                yandexAd.style.cssText = `
+                    display: none !important;
+                    visibility: hidden !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                `;
+                found = true;
+            }
+
+            // 4. Блокируем посторонние видео
+            document.querySelectorAll('video').forEach(v => {
+                const isMain = v.dataset?.testid === 'video' ||
+                              v.closest('.video-wrapper')?.querySelector('[data-testid="video"]') === v;
+
+                if (!isMain && v.src) {
+                    try {
+                        v.pause();
+                        v.muted = true;
+                        v.volume = 0;
+                        v.currentTime = 0;
+                        v.src = '';
+                        v.load();
+                    } catch(e) {}
+                    v.style.cssText = `
+                        display: none !important;
+                        visibility: hidden !important;
+                    `;
+                    found = true;
+                }
+            });
+
+            // 5. ВОССТАНАВЛИВАЕМ ОСНОВНОЕ ВИДЕО С ГРОМКОСТЬЮ
+            if (found) {
+                const mainVideo = findMainVideo();
+                if (mainVideo) {
+                    restoreVolumeState();
+
+                    mainVideo.style.display = '';
+                    mainVideo.style.visibility = '';
+                    mainVideo.style.opacity = '';
+
+                    const tryPlay = (attempt = 0) => {
+                        if (attempt > CONFIG.MAX_RECOVERY_ATTEMPTS) return;
+                        mainVideo.play().catch(() => {
+                            setTimeout(() => tryPlay(attempt + 1), 200);
+                        });
+                    };
+                    setTimeout(() => tryPlay(), 100);
+
+                    console.log(`[FreeZone] ✅ Основное видео восстановлено (громкость: ${Math.round(mainVideo.volume * 100)}%)`);
+                }
+
+                blockCount++;
+                console.log(`[FreeZone] 🛑 Реклама заблокирована (${blockCount})`);
+
+                // ========== БЕЗОПАСНАЯ ОТПРАВКА СТАТИСТИКИ ==========
+                if (isExtensionValid()) {
+                    safeSendMessage({
+                        type: 'AD_BLOCKED',
+                        count: 1
+                    }).catch(() => {});
+                }
+
+                // Блокируем повторные срабатывания
+                isBlocked = true;
                 stopMonitoring();
-                if (state.blockTimer) clearTimeout(state.blockTimer);
 
-                state.blockTimer = setTimeout(() => {
-                    state.isBlocked = false;
+                if (blockTimer) clearTimeout(blockTimer);
+                blockTimer = setTimeout(() => {
+                    isBlocked = false;
                     startMonitoring();
-                    console.log('[FreeZone] ▶️ Мониторинг возобновлен');
+                    console.log('[FreeZone] 🔄 Мониторинг возобновлен');
                 }, CONFIG.BLOCK_DURATION);
+
+                return true;
             }
 
-            return handled;
+            return false;
 
         } catch(e) {
             console.warn('[FreeZone] Ошибка:', e);
+            return false;
         } finally {
-            state.isProcessing = false;
+            isProcessing = false;
         }
-        return false;
     }
 
-    // ========== УПРАВЛЕНИЕ МОНИТОРИНГОМ ==========
+    // ========== ПЕРЕХВАТ PLAY() ==========
+    function interceptPlay() {
+        const originalPlay = HTMLVideoElement.prototype.play;
+        HTMLVideoElement.prototype.play = function() {
+            const isAd = this.dataset?.testid === 'advert-video' ||
+                        this.closest?.('[data-testid="advert"]') !== null ||
+                        this.closest?.('#raichu_yasdk_container') !== null;
+
+            if (isAd) {
+                console.log('[FreeZone] 🛑 Перехвачен play() для рекламы');
+                this.pause();
+                this.muted = true;
+                this.volume = 0;
+                this.currentTime = 0;
+                try {
+                    this.src = '';
+                    this.load();
+                } catch(e) {}
+                return Promise.resolve();
+            }
+            return originalPlay.call(this);
+        };
+
+        const origCreateElement = document.createElement;
+        document.createElement = function(tagName, options) {
+            const el = origCreateElement.call(this, tagName, options);
+            if (tagName.toLowerCase() === 'video') {
+                const origSetAttr = el.setAttribute.bind(el);
+                el.setAttribute = function(name, value) {
+                    origSetAttr(name, value);
+                    if (name === 'data-testid' && value === 'advert-video') {
+                        setTimeout(() => {
+                            try {
+                                el.pause();
+                                el.muted = true;
+                                el.volume = 0;
+                                el.currentTime = 0;
+                                el.src = '';
+                                el.load();
+                                el.style.display = 'none';
+                            } catch(e) {}
+                        }, 0);
+                    }
+                    return el;
+                };
+                return el;
+            }
+            return el;
+        };
+    }
+
+    // ========== ПЕРЕХВАТ ИЗМЕНЕНИЯ ГРОМКОСТИ ==========
+    function interceptVolumeChanges() {
+        document.addEventListener('volumechange', function(e) {
+            const video = e.target;
+            if (video && video.dataset?.testid === 'video') {
+                savedVolume = video.volume;
+                savedMuted = video.muted;
+                console.log(`[FreeZone] 📢 Громкость изменена: ${Math.round(savedVolume * 100)}%`);
+            }
+        }, true);
+    }
+
+    // ========== МОНИТОРИНГ ==========
     function startMonitoring() {
-        if (state.isDestroyed || state.isInitialized) return;
-        state.isInitialized = true;
-
-        if (state.observer) {
-            try { state.observer.disconnect(); } catch(e) {}
-            state.observer = null;
+        if (observer) {
+            try { observer.disconnect(); } catch(e) {}
+            observer = null;
         }
-        if (state.intervalId) {
-            clearInterval(state.intervalId);
-            state.intervalId = null;
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
         }
 
-        state.observer = new MutationObserver(() => {
-            if (state.isDestroyed) return;
-            if (state.timeoutId) clearTimeout(state.timeoutId);
-            state.timeoutId = setTimeout(() => {
-                if (!state.isBlocked && !state.isProcessing) {
-                    handleAds();
-                }
-                state.timeoutId = null;
+        observer = new MutationObserver(() => {
+            if (isBlocked || isProcessing) return;
+
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                killAdCompletely();
+                debounceTimer = null;
             }, CONFIG.DEBOUNCE_DELAY);
         });
 
         try {
-            state.observer.observe(document.body, {
+            observer.observe(document.body, {
                 childList: true,
                 subtree: true,
                 attributes: true,
-                attributeFilter: ['style', 'class', 'data-testid', 'display', 'src']
+                attributeFilter: ['style', 'display', 'src', 'data-testid']
             });
         } catch(e) {}
 
-        state.intervalId = setInterval(() => {
-            if (!state.isDestroyed && !state.isBlocked && !state.isProcessing) {
-                handleAds();
+        intervalId = setInterval(() => {
+            if (!isBlocked && !isProcessing) {
+                killAdCompletely();
             }
         }, CONFIG.CHECK_INTERVAL);
 
-        console.log('[FreeZone] 🔍 Мониторинг запущен');
+        console.log('[FreeZone] 🟢 Мониторинг запущен');
     }
 
     function stopMonitoring() {
-        state.isInitialized = false;
-        if (state.observer) {
-            try { state.observer.disconnect(); } catch(e) {}
-            state.observer = null;
+        if (observer) {
+            try { observer.disconnect(); } catch(e) {}
+            observer = null;
         }
-        if (state.intervalId) {
-            clearInterval(state.intervalId);
-            state.intervalId = null;
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
         }
-        if (state.timeoutId) {
-            clearTimeout(state.timeoutId);
-            state.timeoutId = null;
+        if (debounceTimer) {
+            clearTimeout(debounceTimer);
+            debounceTimer = null;
         }
     }
 
     // ========== ИНИЦИАЛИЗАЦИЯ ==========
     function init() {
-        // Проверяем, что мы на правильном сайте
-        if (!isRutube && !window.location.hostname.includes('youtube.com') &&
-            !window.location.hostname.includes('twitch.tv')) {
-            console.log('[FreeZone] ⚠️ Сайт не поддерживается');
-            return;
-        }
+        interceptPlay();
+        interceptVolumeChanges();
 
-        // Перехватываем аудио-контексты
-        hijackAudioContexts();
-
-        // Первая блокировка с задержкой
         setTimeout(() => {
-            handleAds();
-        }, 1000);
-
-        // Запускаем мониторинг
-        setTimeout(startMonitoring, 1500);
-
-        // Очистка
-        window.addEventListener('beforeunload', () => {
-            state.isDestroyed = true;
-            stopMonitoring();
-            if (state.blockTimer) {
-                clearTimeout(state.blockTimer);
-                state.blockTimer = null;
+            const mainVideo = findMainVideo();
+            if (mainVideo) {
+                savedVolume = mainVideo.volume || 1;
+                savedMuted = mainVideo.muted || false;
+                console.log(`[FreeZone] 💾 Начальная громкость: ${Math.round(savedVolume * 100)}%`);
             }
+        }, 500);
+
+        setTimeout(() => killAdCompletely(), 300);
+        setTimeout(() => killAdCompletely(), 800);
+        setTimeout(() => killAdCompletely(), 1500);
+
+        setTimeout(startMonitoring, 500);
+
+        window.addEventListener('beforeunload', () => {
+            stopMonitoring();
+            if (blockTimer) clearTimeout(blockTimer);
+            if (debounceTimer) clearTimeout(debounceTimer);
         });
 
-        console.log('[FreeZone] 🚀 Защита активирована');
+        console.log('[FreeZone] 🟢 Защита активирована');
     }
 
-    // ========== ЗАПУСК ==========
+    // Запуск
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', init);
     } else {
-        // Если DOM уже загружен, запускаем с небольшой задержкой
-        setTimeout(init, 500);
+        init();
     }
 
 })();

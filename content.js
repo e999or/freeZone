@@ -1,6 +1,8 @@
 // content.js - С защитой от "Extension context invalidated"
 (function() {
     'use strict';
+    if (window.__fzRutubeLoaded) return;
+    window.__fzRutubeLoaded = true;
 
     if (!window.location.hostname.includes('rutube.ru')) return;
 

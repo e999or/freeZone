@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "sites": [
     {
       "domain": "rutube.ru",
@@ -63,6 +63,120 @@
           "name": "twitch-banners",
           "selector": ".ad-banner, .ad-container",
           "action": "remove"
+        }
+      ]
+    },
+    {
+      "domain": "vkvideo.ru",
+      "cleanSrc": false,
+      "usesShadowDOM": true,
+      "shadowHostSelector": "vk-video-player .shadow-root-container",
+      "strategy": "hide-and-mute",
+      "adTypes": [
+        {
+          "name": "vk-ads-container",
+          "selector": ".ads-container",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-ad-container",
+          "selector": "[data-testid='ad-container']",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-ad-timeline",
+          "selector": "[data-testid='ad-timeline']",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-ad-actions",
+          "selector": ".rb-adman-ad-actions",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-cta-block",
+          "selector": ".rb-adman-cta-block-wrapper",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-skip-button",
+          "selector": "[data-testid='ad-skip-button']",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-premium-button",
+          "selector": "vk-video-player a[href*='vkpremium']",
+          "action": "hide",
+          "insideShadowRoot": false
+        },
+        {
+          "name": "vk-ad-video",
+          "selector": "video[src*='mradx.net']",
+          "action": "mute",
+          "insideShadowRoot": true
+        }
+      ]
+    },
+    {
+      "domain": "vk.com",
+      "cleanSrc": false,
+      "usesShadowDOM": true,
+      "shadowHostSelector": "vk-video-player .shadow-root-container",
+      "strategy": "hide-and-mute",
+      "adTypes": [
+        {
+          "name": "vk-ads-container",
+          "selector": ".ads-container",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-ad-container",
+          "selector": "[data-testid='ad-container']",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-ad-timeline",
+          "selector": "[data-testid='ad-timeline']",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-ad-actions",
+          "selector": ".rb-adman-ad-actions",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-cta-block",
+          "selector": ".rb-adman-cta-block-wrapper",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-skip-button",
+          "selector": "[data-testid='ad-skip-button']",
+          "action": "hide",
+          "insideShadowRoot": true
+        },
+        {
+          "name": "vk-premium-button",
+          "selector": "vk-video-player a[href*='vkpremium']",
+          "action": "hide",
+          "insideShadowRoot": false
+        },
+        {
+          "name": "vk-ad-video",
+          "selector": "video[src*='mradx.net']",
+          "action": "mute",
+          "insideShadowRoot": true
         }
       ]
     }

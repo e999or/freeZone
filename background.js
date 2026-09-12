@@ -107,14 +107,20 @@ class AdBlockerBackground {
     async injectContentScript(tabId, url) {
         try {
             const domain = new URL(url).hostname;
-            const siteRules = this.getRulesForDomain(domain);
 
-            if (siteRules) {
-                await chrome.scripting.executeScript({
-                    target: { tabId: tabId },
-                    files: ['content.js']
-                }).catch(() => {});
+            let file = null;
+            if (domain.includes('rutube.ru')) {
+                file = 'content.js';
+            } else if (/vk(video)?\.(ru|com)$/.test(domain) || domain.endsWith('vk.ru')) {
+                file = 'content-vk.js';
             }
+
+            if (!file) return;
+
+            await chrome.scripting.executeScript({
+                target: { tabId: tabId, allFrames: true },
+                files: [file]
+            }).catch(() => {});
         } catch (error) {
             // Игнорируем ошибки инъекции
         }

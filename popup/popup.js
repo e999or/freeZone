@@ -100,27 +100,30 @@
     }
 
     // ========== ОБНОВЛЕНИЕ ТЕКУЩЕГО САЙТА ==========
-    function updateCurrentSite() {
-        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
-            if (tabs[0] && elements.currentSite) {
-                try {
-                    const url = new URL(tabs[0].url);
-                    const domain = url.hostname;
-                    if (domain.includes('rutube')) {
-                        elements.currentSite.textContent = '🌐 rutube.ru';
-                    } else if (domain.includes('youtube')) {
-                        elements.currentSite.textContent = '🌐 youtube.com';
-                    } else if (domain.includes('twitch')) {
-                        elements.currentSite.textContent = '🌐 twitch.tv';
-                    } else {
-                        elements.currentSite.textContent = `🌐 ${domain}`;
-                    }
-                } catch (e) {
-                    elements.currentSite.textContent = '🌐 Неизвестный сайт';
-                }
-            }
-        });
-    }
+   function updateCurrentSite() {
+       chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+           if (tabs[0] && elements.currentSite) {
+               try {
+                   const url = new URL(tabs[0].url);
+                   const domain = url.hostname;
+
+                   if (domain.includes('rutube')) {
+                       elements.currentSite.textContent = '🌐 rutube.ru';
+                   } else if (domain.includes('vkvideo') || domain === 'vk.com' || domain.endsWith('.vk.com') || domain.endsWith('.vk.ru')) {
+                       elements.currentSite.textContent = '🌐 vkvideo.ru';
+                   } else if (domain.includes('youtube')) {
+                       elements.currentSite.textContent = '🌐 youtube.com';
+                   } else if (domain.includes('twitch')) {
+                       elements.currentSite.textContent = '🌐 twitch.tv';
+                   } else {
+                       elements.currentSite.textContent = `🌐 ${domain}`;
+                   }
+               } catch (e) {
+                   elements.currentSite.textContent = '🌐 Неизвестный сайт';
+               }
+           }
+       });
+   }
 
     // ========== ОБРАБОТЧИКИ СООБЩЕНИЙ ==========
     chrome.runtime.onMessage.addListener(function(message, sender, sendResponse) {

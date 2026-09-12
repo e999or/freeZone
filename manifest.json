@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "FreeZone - Блокировщик рекламы",
-  "version": "1.0.0",
-  "description": "Блокировка рекламы на Rutube и других сайтах",
+  "version": "1.1.0",
+  "description": "Блокировка рекламы на Rutube, VK Video и других сайтах",
   "permissions": [
     "storage",
     "scripting",
@@ -10,7 +10,10 @@
     "webNavigation"
   ],
   "host_permissions": [
-    "*://*.rutube.ru/*"
+    "*://*.rutube.ru/*",
+    "*://*.vk.com/*",
+    "*://*.vkvideo.ru/*",
+    "*://*.vk.ru/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -20,6 +23,16 @@
       "matches": ["*://*.rutube.ru/*"],
       "js": ["content.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "*://*.vk.com/*",
+        "*://*.vkvideo.ru/*",
+        "*://*.vk.ru/*"
+      ],
+      "js": ["content-vk.js"],
+      "run_at": "document_start",
+      "all_frames": true
     }
   ],
   "action": {
